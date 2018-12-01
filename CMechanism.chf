@@ -1,0 +1,810 @@
+/*==============================================  
+|    FILE NAME: CMechanism.chf
+|    
+|    AUTHORS: Carl Hutchinson, Edward Jacobs
+|    DATE: 12/7/18
+|    
+|    VERSION NUMBER: 1
+|    LAST UPDATED BY: Carl
+===============================================*/
+
+
+#include <mechanism.h>
+
+#define DEG2RAD(a) ((M_PI/180)*a)
+
+void CMechanism::m_initialize(void) 
+{
+
+    //Defaults//
+    m_r[1] = 5.5;            
+    m_r[2] = 1;            
+    m_r[3] = 3;
+    m_r[4] = 4.5;            
+    m_r[5] = 8;            
+    m_r[6] = 0;
+    m_r[7] = 3;            
+
+    m_theta[1]  = DEG2RAD(10);  
+    m_theta[7]  = 0;            
+    m_theta[8]  = M_PI/2;       
+
+    m_omega[2] = -15;               //Imput angular velocity
+    
+    m_numpoints = 50;               //points used in ploting and graphics
+    m_uscunit = 0;                  // selection SI units
+}
+
+
+/*=========================================
+CMechanism()
+
+ARGUMENTS: None
+RETURN: None
+
+DESCRIPTION: constructor of CMechanism
+             Runs m_initialize
+
+VERSION: 1
+*/
+CMechanism::CMechanism() {
+   m_initialize();
+}
+
+
+
+/*=========================================
+~CMechanism()
+
+ARGUMENTS: None
+RETURN: None
+
+DESCRIPTION: decunstructor of CMechanism
+             Runs m_initialize
+
+VERSION: 1
+*/
+CMechanism::~CMechanism(){
+}
+
+
+
+/*=========================================
+setAngVel()
+
+ARGUMENTS: omega2 //anglular input velocity
+RETURN: None
+
+DESCRIPTION: Set omega2
+
+VERSION: 1
+*/
+void CMechanism::setAngVel(double omega2){
+   m_omega[2] = omega2;
+}
+
+
+
+
+
+
+/***************************************************************
+ * setLinks()
+ *
+ * Set the Length for each link and angle between ground pins.
+ *
+ * Arguments: r1  ... length Link 1
+ *            r2  ...    "     "  2
+ *            r4  ...    "     "  4
+ *            r5  ...    "     "  5
+ *            r7  ...    "     "  7
+ *            theta 1 ... angle of Link 1
+ ***************************************************************/
+/*=========================================
+setLinks()
+
+ARGUMENTS: 
+RETURN: None
+
+DESCRIPTION: 
+
+VERSION: 1
+*/
+void CMechanism::setLinks(double r1, r2, r4, r5, r7, theta1)
+{
+   int characteristic;
+   // Check geometry input for values that will make the 
+   // mechanism not work
+   if((int)(1000000*r2) >= (int)(1000000*r1)) 
+   {
+      printf("r2 must be less than r1.\n"
+             "Try resetting the geometry and trying agian.\n\n");
+      exit(1);
+   }
+   if((int)(1000000*r4) < (int)(1000000*r1) + (int)(1000000*r2)) 
+   {
+      printf("r4 must be greater than r1 + r2.\n"
+             "Try resetting the geometry and trying agian.\n\n");
+      exit(1);
+   }
+   if((int)(1000000*r4) > (int)(1000000*r5) + (int)(1000000*abs(r7)))
+   {
+      printf("r4 must be less than r5 + r7.\n"
+             "Try resetting the geometry and trying agian.\n\n");
+      exit(1);
+   }
+
+   // If geometry valid assign parameters
+   m_r[1] = r1;
+   m_r[2] = r2;
+   m_r[4] = r4;
+   m_r[5] = r5;
+   m_r[7] = r7;
+   m_theta[1] = theta1;
+
+   if(m_uscunit)
+   {
+      m_r[1] *= M_FT2M;     // ft --> m
+      m_r[2] *= M_FT2M;     // ft --> m
+      m_r[4] *= M_FT2M;     // ft --> m
+      m_r[5] *= M_FT2M;     // ft --> m
+      m_r[7] *= M_FT2M;     // ft --> m
+   }
+}
+
+
+
+
+
+/*****************************************************
+ * setNumPoints()
+ *
+ * Set the number of points for calcs & animation.
+ *
+ * Arguments: numpoints ... number of points used
+ *****************************************************/
+void CMechanism::setNumPoints(int numpoints)
+{
+   m_numpoints = numpoints;
+}
+
+
+
+
+
+/******************************************
+ * uscUnit()
+ *
+ * Set the units preference.
+ *
+ * Arguments: unit ... true for USC units
+ *                     false for SI units
+ ******************************************/
+void CMechanism::uscUnit(bool unit)
+{
+   m_uscunit = unit;
+   if(m_uscunit)
+      printf("\n!! You're using ENGLISH UNITS !!\n\n");
+   else
+      printf("\n!! You're using SI UNITS !!\n\n");
+}
+
+/***************************************************************
+ * calcPosition()
+ *
+ * Computes the angular positions & 
+ * unknown lengths for a given angle of the driving link
+ * of the quick return mechanism. 
+ *
+ * Arguments: theta2 ... drive link positions
+ ***************************************************************/
+void CMechanism::calcPosition(double theta2)
+{
+
+   int n1, n2;
+   double temp1, temp2;
+   double complex z;
+
+   m_theta[2] = theta2;
+   // Solve First Loop: r1 + r2 = r3 -> r3 - r2 = r1
+   // z = r1
+   n1 = 1;
+   n2 = 2;
+   z = polar(m_r[1], m_theta[1]);
+   // find r3, theta4 
+   complexsolve(n1, n2, -m_r[2], m_theta[2], z, m_r[3], m_theta[4], temp1, temp2);
+
+   // Solve Second Loop: r4 + r5 = r6 + r7 ->  r6 - r5 = r4 - r7
+   // z = r4 - r7
+   n1 = 1;
+   n2 = 4;
+   z = polar(m_r[4], m_theta[4]) - polar(m_r[7], m_theta[7]);
+   // find r6, theta5
+   complexsolve(n1, n2, m_theta[6], -m_r[5], z, m_r[6], m_theta[5], temp1, temp2);
+
+   // Solve r8: r3 + r8 = r4 -> r8 = r4 - r3
+   m_r[8] = m_r[4] - m_r[3];
+}
+
+/************************************************
+ * calcVelocity()
+ *
+ * Computes the velocities for
+ * the quick return mechanism.
+ *
+ * Arguments: theta2 ... drive link positions
+ ************************************************/
+void CMechanism::calcVelocity(double theta2)
+{
+   calcPosition(theta2);
+
+   // omega4
+   m_omega[4] = (m_r[2]/m_r[3])*(cos(m_theta[2] - m_theta[4]))*m_omega[2];
+
+   // omega5
+   m_omega[5] = -(m_r[4]/m_r[5])*(cos(m_theta[4])/cos(m_theta[5]))*m_omega[4];
+
+   // velocity r7
+   m_r3_dot = m_r[2]*m_omega[2]*(sin(m_theta[4]-m_theta[2]));
+
+   // velocity r9
+   m_r6_dot = (m_r[4]*m_omega[4]*(sin(m_theta[5]-m_theta[4])))/(cos(m_theta[5]));
+
+   // Velocity of slider 3
+   m_v3 = I*polar((m_r[3]*m_omega[4]), m_theta[4]) + polar(m_r3_dot, m_theta[4]);
+}
+
+/************************************************
+ * sliderPos()
+ *
+ * Return postion of slider for given theta2.
+ *
+ * Arguments: theta2 ... drive link positions
+ *
+ * Return value: slider position
+ ************************************************/
+double CMechanism::sliderPos(double theta2)
+{
+   calcPosition(theta2);
+
+   if(m_uscunit)
+   {
+      return (m_r[6] /= M_FT2M); // m --> ft
+   }
+   else
+   {
+      return m_r[6];
+   }
+}
+
+/*****************************************************
+ * sliderVel()
+ *
+ * Return Velocity of slider for given theta2.
+ *
+ * Arguments: theta2 ... drive link positions
+ *
+ * Return value: slider velocity
+ *****************************************************/
+double CMechanism::sliderVel(double theta2)
+{
+   calcVelocity(theta2);
+
+   if(m_uscunit)
+   {
+      return m_r6_dot /= M_FT2M; // m --> ft
+   }
+   else
+   {
+      return m_r6_dot;
+   }
+}
+
+
+
+
+
+
+
+/*****************************************************************
+ * getAngPos()
+ *
+ * Return angular position for given theta2 & link number.
+ *
+ * Arguments: theta2 ... drive link positions
+ *            link ... link angle desired
+ *
+ * Return value: theta for desired link
+ *****************************************************************/
+double CMechanism::getAngPos(double theta2, int link)
+{
+   double output;
+   calcPosition(theta2);
+
+   switch(link)
+   {
+      case QR_LINK_2:
+         output = m_theta[2];
+         break;
+      case QR_LINK_4:
+         output = m_theta[4];
+         break;
+      case QR_LINK_5:
+         output = m_theta[5];
+         break;
+   }
+   return output;
+}
+
+
+
+
+
+/*****************************************************************
+ * getAngVel()
+ *
+ * Return angular velocity for given theta2 & link number.
+ *
+ * Arguments: theta2 ... drive link positions
+ *            link ... link angular velocity desired
+ *
+ * Return value: omega for desired link
+ *****************************************************************/
+double CMechanism::getAngVel(double theta2, int link)
+{
+   double output;
+   calcVelocity(theta2);
+
+   switch(link)
+   {
+      case QR_LINK_2:
+         output = m_omega[2];
+         break;
+      case QR_LINK_4:
+         output = m_omega[4];
+         break;
+      case QR_LINK_5:
+         output = m_omega[5];
+         break;
+   }
+   return output;
+}
+
+
+
+
+/**************************************************************
+ * plotSliderPos()
+ *
+ * Plot slider position as function of time.
+ *
+ * Arguments: *plot ... pointer to plot defined
+ *                      in the calling program
+ ***************************************************************/
+void CMechanism::plotSliderPos(CPlot *plot)
+{
+   int i;
+   double increment;
+   string_t  xlabel, ylabel, title;
+   array double time[m_numpoints + 1], Position[m_numpoints + 1];
+
+   increment = 2*M_PI/m_numpoints;
+   if(m_omega[2] < 0)
+      increment = -increment;
+
+   for(i = 0; i <= m_numpoints; i++)
+   {
+      time[i] = (i*increment/m_omega[2]);
+      Position[i] = sliderPos(i*increment);
+   }
+
+   title = "Slider Position vs. Time"; xlabel = "time (s)";
+
+   if(m_uscunit)
+   {
+      ylabel = "Position (ft)";
+   }
+   else
+   {
+      ylabel = "Position (m)";
+   }
+
+   plotxy(time, Position, title, xlabel, ylabel, plot);
+   plot->plotting();
+}
+
+
+
+
+
+/**********************************************************
+ * plotSliderVel()
+ *
+ * Plot slider velocity as function of time.
+ *
+ * Arguments: *plot ... pointer to plot defined
+ *                      in the calling program
+ **********************************************************/
+void CMechanism::plotSliderVel(CPlot *plot)
+{
+   int i;
+   double increment;
+   string_t  xlabel, ylabel, title;
+   array double time[m_numpoints + 1], Velocity[m_numpoints + 1];
+
+   increment = 2*M_PI/m_numpoints;
+   if(m_omega[2] < 0)
+      increment = -increment;
+
+   for(i = 0; i <= m_numpoints; i++)
+   {
+      time[i] = (i*increment/m_omega[2]);
+      Velocity[i] = sliderVel(i*increment);
+   }
+   title = "Slider Velocity vs. Time"; xlabel = "time (s)";
+
+   if(m_uscunit)
+   {
+      ylabel = "Velocity (ft/s)";
+   }
+   else
+   {
+      ylabel = "Velocity (m/s)";
+   }
+
+   plotxy(time, Velocity, title, xlabel, ylabel, plot);
+   plot->plotting();
+}
+
+
+
+
+
+/***************************************************************
+ * plotAngPos()
+ *
+ * Plot angular position of links 4 & 5 as function of time.
+ *
+ * Arguments: *plot ... pointer to plot defined
+ *                      in the calling program
+ ***************************************************************/
+void CMechanism::plotAngPos(CPlot *plot)
+{
+   int i;
+   double increment;
+   string_t  xlabel, ylabel, title;
+   array double time[m_numpoints + 1];
+   array double Theta4[m_numpoints + 1], Theta5[m_numpoints + 1];
+
+   increment = 2*M_PI/m_numpoints;
+   if(m_omega[2] < 0)
+      increment = -increment;
+
+   for(i = 0; i <= m_numpoints; i++)
+   {
+      calcPosition(i*increment);
+      time[i] = (i*increment/m_omega[2]);
+      Theta4[i] = m_theta[4];
+      Theta5[i] = m_theta[5];
+   }
+   title = "Theta 4 vs. Time"; xlabel = "time (s)"; ylabel = "Theta 4 (rad)";
+   plotxy(time, Theta4, title, xlabel, ylabel, plot);
+   plot->plotting();
+
+   title = "Theta 5 vs. Time"; xlabel = "time (s)"; ylabel = "Theta 5 (rad)";
+   plotxy(time, Theta5, title, xlabel, ylabel, plot);
+   plot->plotting();
+}
+
+
+
+
+
+/***************************************************************
+ * plotAngVel()
+ *
+ * Plot angular velocity of links 4 & 5 as function of time.
+ *
+ * Arguments: *plot ... pointer to plot defined
+ *                      in the calling program
+ ***************************************************************/
+void CMechanism::plotAngVel(CPlot *plot)
+{
+   int i;
+   double increment;
+   string_t  xlabel, ylabel, title;
+   array double time[m_numpoints + 1];
+   array double Omega4[m_numpoints + 1], Omega5[m_numpoints + 1];
+
+   increment = 2*M_PI/m_numpoints;
+   if(m_omega[2] < 0)
+      increment = -increment;
+
+   for(i = 0; i <= m_numpoints; i++)
+   {
+      calcVelocity(i*increment);
+      time[i] = (i*increment/m_omega[2]);
+      Omega4[i] = m_omega[4];
+      Omega5[i] = m_omega[5];
+   }
+   title = "Omega 4 vs. Time"; xlabel = "time (s)"; ylabel = "Omega 4 (rad/s)";
+   plotxy(time, Omega4, title, xlabel, ylabel, plot);
+   plot->plotting();
+
+   title = "Omega 5 vs. Time"; xlabel = "time (s)"; ylabel = "Omega 5 (rad/s)";
+   plotxy(time, Omega5, title, xlabel, ylabel, plot);
+   plot->plotting();
+}
+
+
+
+
+
+/***************************************************************
+ * displayPosition() 
+ *
+ * This function will write a file that can be run with
+ * qanimate to display the configuration of the mechanism.
+ *
+ * Arguments: theta2 ... determines the configuration 
+ ***************************************************************/
+void CMechanism::displayPosition(double theta2, ...)
+{
+   complex R[1:8];
+   double sliderlength = m_r[4] / 8;
+   double sliderwidth = sliderlength / 2;
+   char *QnmFileName;
+   FILE *positionpipe;
+   int outputType = QANIMATE_OUTPUTTYPE_DISPLAY; // default display
+   va_list ap;
+   int vacount;
+
+   va_start(ap, theta2);
+   vacount = va_count(ap);
+   if(vacount > 0)
+      outputType = va_arg(ap, int);
+   if(outputType == QANIMATE_OUTPUTTYPE_STREAM)
+      positionpipe = stdout; 
+   else
+   {
+      if(outputType == QANIMATE_OUTPUTTYPE_FILE)
+         QnmFileName = va_arg(ap, char*);
+      else
+         QnmFileName = tempnam("C:/Windows/temp", NULL);
+      // Try to open output file
+      if(!(positionpipe = fopen(QnmFileName, "w")))
+      {
+         fprintf(stderr, "displayPosition(): unable to open output file '%s'\n", QnmFileName); 
+         return;
+      }
+   }
+   va_end(ap);
+
+   // Call calcPosition() to calculate everything
+   calcPosition(theta2);
+
+   // Create complex to make it easier to use
+   R[1] = polar(m_r[1], m_theta[1]);
+   R[2] = R[1] + polar(m_r[2], m_theta[2]);
+   R[4] = polar(m_r[4], m_theta[4]);
+   R[5] = R[4] + polar(m_r[5], m_theta[5]);
+   R[3] = polar(m_r[3]-sliderlength/2, m_theta[4])
+          + polar(sliderwidth/2, m_theta[4]-M_PI/2);
+   R[7] = polar(m_r[3]-sliderlength/2, m_theta[4]);
+   R[8] = polar(m_r[3]+sliderlength/2, m_theta[4]);
+   
+   /* display position */
+   fprintf(positionpipe, "#qanimate position data\n");
+   fprintf(positionpipe, "title \"Position of the Whitworth"
+                         " Quick Return Mechanism\"\n\n");
+   fprintf(positionpipe, "fixture\n");
+   fprintf(positionpipe, "groundpin 0 0 %f %f\n\n",
+           real(R[1]), imag(R[1]));
+   fprintf(positionpipe, "joint 0 0 \\\n");
+   fprintf(positionpipe, "ground %f %f %f %f\n\n",
+           real(R[5])-sliderlength, imag(R[5])-sliderwidth/2,
+           real(R[5])+sliderlength, imag(R[5])-sliderwidth/2);
+   fprintf(positionpipe, "link %f %f %f %f \\\n",
+           real(R[1]), imag(R[1]),
+           real(R[2]), imag(R[2]));
+   fprintf(positionpipe, "line 0 0 %f %f \\\n",
+           real(R[7]), imag(R[7]));
+   fprintf(positionpipe, "line %f %f %f %f \\\n",
+           real(R[8]), imag(R[8]),
+           real(R[4]), imag(R[4]));
+   fprintf(positionpipe, "link %f %f %f %f \\\n",
+           real(R[4]), imag(R[4]),
+           real(R[5]), imag(R[5]));
+   fprintf(positionpipe, "rectangle %f %f %f %f angle %f pen red \\\n",
+           real(R[3]), imag(R[3]), sliderlength, 
+           sliderwidth, M_RAD2DEG(m_theta[4]));
+   fprintf(positionpipe, "rectangle %f %f %f %f angle %f pen blue \\\n",
+           real(R[5])-sliderlength/2, imag(R[5])-sliderwidth/2,
+           sliderlength, sliderwidth, 0.0);
+   fprintf(positionpipe, "text %f %f \"01\" \\\n",
+           -sliderwidth/8, -sliderwidth);
+   fprintf(positionpipe, "text %f %f \"02\" \\\n",
+           (abs(m_theta[2]) > M_PI/2 && abs(m_theta[2]) < 3*M_PI/2)
+              ?(real(R[1])+sliderwidth):(real(R[1])-sliderwidth),imag(R[1]));
+   fprintf(positionpipe, "text %f %f \"A\" \\\n",
+           real(polar(m_r[3]+sliderlength/4,m_theta[4])
+              +polar(sliderwidth, -M_PI/2+m_theta[4])),
+           imag(polar(m_r[3]+sliderlength/4,m_theta[4])
+              +polar(sliderwidth, -M_PI/2+m_theta[4])));
+   fprintf(positionpipe, "text %f %f \"B\" \\\n",
+           real(R[4]), imag(R[4])+sliderwidth/2);
+   fprintf(positionpipe, "text %f %f \"r_5\" \\\n",
+           real(R[4]+polar(m_r[5]/2, m_theta[5])
+              +polar(sliderwidth/2, M_PI/2+m_theta[5])),
+           imag(R[4]+polar(m_r[5]/2, m_theta[5])
+              +polar(sliderwidth/2, M_PI/2+m_theta[5])));
+   fprintf(positionpipe, "text %f %f \"6\" \\\n",
+           real(R[5]), imag(R[5])+sliderwidth);
+   fprintf(positionpipe, "text %f %f \"r_4\" \\\n",
+           real(polar(sliderwidth, m_theta[4])
+              +polar(sliderwidth/2, m_theta[4]-M_PI/2)),
+           imag(polar(sliderwidth, m_theta[4])
+              +polar(sliderwidth/2, m_theta[4]-M_PI/2)));
+   fprintf(positionpipe, "text %f %f \"r_2\"\n\n",
+           real(R[1]+polar(m_r[2]/3, m_theta[2])
+              +polar(sliderwidth/3, M_PI/2-m_theta[2])),
+           imag(R[1]+polar(m_r[2]/3, m_theta[2])
+              +polar(sliderwidth/3, M_PI/2-m_theta[2])));
+
+   if(outputType == QANIMATE_OUTPUTTYPE_FILE)
+   {
+      fclose(positionpipe);
+   }
+   else if(outputType == QANIMATE_OUTPUTTYPE_DISPLAY)
+   {
+      fclose(positionpipe);
+      #ifndef _DARWIN_
+         qanimate $QnmFileName
+      #endif // DARWIN
+      remove(QnmFileName);
+      free(QnmFileName);
+   }
+}
+
+
+
+
+
+/***************************************************************
+ * animation()
+ *
+ * This function will write a file that can be run with
+ * qanimate to display an animation of the mechanism as
+ * the second link is rotated.
+ ***************************************************************/
+void CMechanism::animation(...)
+{
+   complex R[1:8];
+   double interval = 2*M_PI / (m_numpoints);
+   double sliderlength = m_r[4] / 8;
+   double sliderwidth = sliderlength / 2;
+   double max, min;
+   int i;
+   char *QnmFileName;
+   int outputType = QANIMATE_OUTPUTTYPE_DISPLAY; // default display
+   FILE *animationpipe;
+   va_list ap;
+   int vacount;
+
+   va_start(ap, VA_NOARG);
+   vacount = va_count(ap);
+   if(vacount > 0)
+      outputType = va_arg(ap, int);
+   if(outputType == QANIMATE_OUTPUTTYPE_STREAM)
+      animationpipe = stdout;
+   else
+   {
+      if(outputType == QANIMATE_OUTPUTTYPE_FILE)
+         QnmFileName = va_arg(ap, char*);
+      else
+         QnmFileName = tempnam("C:/Windows/temp", NULL);
+      // Try to open output file
+      if(!(animationpipe = fopen(QnmFileName, "w")))
+      {
+         fprintf(stderr, "animation(): unable to open output file '%s'\n", QnmFileName); 
+         return;
+      }
+   }
+   va_end(ap);
+
+   sliderRange(max, min);
+   R[1] = polar(m_r[1], m_theta[1]);
+
+   /* Write header part */
+   fprintf(animationpipe, "#qanimate animation data\n");
+   fprintf(animationpipe, "title \"Animation of the Whitworth Quick"
+                          " Return Mechanism\"\n\n");
+   fprintf(animationpipe, "fixture\n");
+   fprintf(animationpipe, "groundpin 0 0 %f %f\n\n",
+           real(R[1]), imag(R[1]));
+   fprintf(animationpipe, "ground %f %f %f %f \n\n"
+           ,min-sliderlength
+           ,m_r[7]-sliderwidth/2
+           ,max+sliderlength
+           ,m_r[7]-sliderwidth/2);
+   fprintf(animationpipe, "animate restart\n");
+
+   for(i=0; i < m_numpoints; i++)
+   {
+      // Call calcPosition() to calculate everything
+      calcPosition(i*interval*m_omega[2]/abs(m_omega[2]));
+
+      // Create complex to make it easier to use
+      R[2] = R[1] + polar(m_r[2], m_theta[2]);
+      R[4] = polar(m_r[4], m_theta[4]);
+      R[5] = R[4] + polar(m_r[5], m_theta[5]);
+      R[3] = polar(m_r[3]-sliderlength/2, m_theta[4])
+             + polar(sliderwidth/2, m_theta[4]-M_PI/2);
+      R[7] = polar(m_r[3]-sliderlength/2, m_theta[4]);
+      R[8] = polar(m_r[3]+sliderlength/2, m_theta[4]);
+
+      /* Write animation part */
+      fprintf(animationpipe, "link %f %f %f %f \\\n",
+              real(R[1]), imag(R[1]),
+              real(R[2]), imag(R[2]));
+      fprintf(animationpipe, "line 0 0 %f %f \\\n",
+              real(R[7]), imag(R[7]));
+      fprintf(animationpipe, "line %f %f %f %f \\\n",
+              real(R[8]), imag(R[8]),
+              real(R[4]), imag(R[4]));
+      fprintf(animationpipe, "link %f %f %f %f \\\n",
+              real(R[4]), imag(R[4]),
+              real(R[5]), imag(R[5]));
+      fprintf(animationpipe, "rectangle %f %f %f %f angle %f pen red \\\n",
+              real(R[3]), imag(R[3]), sliderlength, sliderwidth, 
+              M_RAD2DEG(m_theta[4]));
+      fprintf(animationpipe, "rectangle %f %f %f %f angle %f pen blue \\\n",
+              real(R[5])-sliderlength/2, imag(R[5])-sliderwidth/2,
+              sliderlength, sliderwidth, 0.0);
+      fprintf(animationpipe, "joint 0 0 \\\n");
+      fprintf(animationpipe, "stopped \\\n");
+      fprintf(animationpipe, "text %f %f \"01\" \\\n",
+              -sliderwidth/8, -sliderwidth);
+      fprintf(animationpipe, "text %f %f \"02\" \\\n",
+              (abs(m_theta[2]) > M_PI/2 && abs(m_theta[2]) < 3*M_PI/2)
+                 ?(real(R[1])+sliderwidth):(real(R[1])-sliderwidth),imag(R[1]));
+      fprintf(animationpipe, "text %f %f \"A\" \\\n",
+              real(polar(m_r[3]+sliderlength/4,m_theta[4])
+                 +polar(sliderwidth, -M_PI/2+m_theta[4])),
+              imag(polar(m_r[3]+sliderlength/4,m_theta[4])
+                 +polar(sliderwidth, -M_PI/2+m_theta[4])));
+      fprintf(animationpipe, "text %f %f \"B\" \\\n",
+              real(R[4]), imag(R[4])+sliderwidth/2);
+      fprintf(animationpipe, "text %f %f \"r_5\" \\\n",
+              real(R[4]+polar(m_r[5]/2, m_theta[5])
+                 +polar(sliderwidth/2, M_PI/2+m_theta[5])),
+              imag(R[4]+polar(m_r[5]/2, m_theta[5])
+                 +polar(sliderwidth/2, M_PI/2+m_theta[5])));
+      fprintf(animationpipe, "text %f %f \"6\" \\\n",
+              real(R[5]), imag(R[5])+sliderwidth);
+      fprintf(animationpipe, "text %f %f \"r_4\" \\\n",
+              real(polar(sliderwidth, m_theta[4])
+                 +polar(sliderwidth/2, m_theta[4]-M_PI/2)),
+              imag(polar(sliderwidth, m_theta[4])
+                 +polar(sliderwidth/2, m_theta[4]-M_PI/2)));
+      fprintf(animationpipe, "text %f %f \"r_2\"\n\n",
+              real(R[1]+polar(m_r[2]/3, m_theta[2])
+                 +polar(sliderwidth/3, M_PI/2-m_theta[2])),
+              imag(R[1]+polar(m_r[2]/3, m_theta[2])
+                 +polar(sliderwidth/3, M_PI/2-m_theta[2])));
+   }
+
+   if(outputType == QANIMATE_OUTPUTTYPE_FILE)
+   {
+      fclose(animationpipe);
+   }
+   else if(outputType == QANIMATE_OUTPUTTYPE_DISPLAY)
+   {
+      fclose(animationpipe);
+      #ifndef _DARWIN_
+         qanimate $QnmFileName
+      #endif // DARWIN
+      remove(QnmFileName);
+      free(QnmFileName);
+   }
+}
